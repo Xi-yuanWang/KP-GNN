@@ -7,7 +7,7 @@ from .layer_utils import degree
 from .combine import *
 from torch_geometric.utils import add_self_loops
 from .mol_encoder import BondEncoder
-
+import torch.nn as nn
 
 class KPGCNConv(MessagePassing):
     """
@@ -31,6 +31,9 @@ class KPGCNConv(MessagePassing):
         self.output_size=output_size
         assert output_size%K==0
         self.output_dk=output_size//K
+
+        tk = self.output_dk * K
+        self.efeature_mlp = nn.Sequential(nn.Linear(tk, tk), nn.ReLU(inplace=True), nn.Linear(tk, tk), nn.ReLU(inplace=True))
 
         self.hop_proj=nn.Linear(input_size,output_size)
 
@@ -91,6 +94,8 @@ class KPGCNConv(MessagePassing):
             e_emb = torch.cat([e1_emb,ek_emb],dim=-2) # E * K * dk
         else:
             e_emb=e1_emb
+        E, K, dk = e_emb.shape[0], e_emb.shape[1], e_emb.shape[2]
+        e_emb = self.efeature_mlp(e_emb.flatten(-2, -1)).reshape(E, K, dk)
 
         row, col = edge_index
         deg = degree(col, x.size(0), edge_attr) # N * K

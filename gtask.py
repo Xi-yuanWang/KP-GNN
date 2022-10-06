@@ -1,41 +1,45 @@
 """
-script to train on node property prediction task
+script to train on graph property prediction task
 Adpated from https://github.com/LingxiaoShawn/GNNAsKernel
 """
 
-import torch
-import numpy as np
 import train_utils
+import numpy as np
 import random
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from collections import OrderedDict
+from json import dumps
 import argparse
 from data_utils import multi_hop_neighbors_with_gd_kernel,multi_hop_neighbors_with_spd_kernel,PyG_collate,resistance_distance
 from models.model_utils import make_gnn_layer,make_GNN
-from models.NodeRegression import NodeRegression
-from torch_geometric.nn import DataParallel
-from json import dumps
+from models.GraphRegression import GraphRegression
 from datasets.GraphPropertyDataset import GraphPropertyDataset
 import torch_geometric.transforms as T
 import shutil
 from torch.optim import Adam
 import torch.nn as nn
 import time
+from tqdm import tqdm
+import torch.nn.functional as F
+from functools import partial
+import torch.utils.data as data
 from torch.utils.data import DataLoader
 import os
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-#os.environ["CUDA_LAUNCH_BLOCKING"]="1"
-def train(train_loader, model,task, optimizer, device):
+def train(loader, model,task, optimizer, device):
     total_loss = 0
     N = 0
     with torch.enable_grad():
-        for data in train_loader:
+        for data in loader:
             data = data.to(device)
             optimizer.zero_grad()
-            loss = (model(data).squeeze() - data.pos[:,task:task+1].squeeze()).square().mean()
-
+            loss = F.l1_loss(model(data).flatten(), data.y[:,task:task+1].flatten())
             loss.backward()
-            total_loss += loss.item() * data.num_nodes
-            N += data.num_nodes
+            total_loss += loss.item()
+            N += data.num_graphs
             optimizer.step()
 
     return np.log10(total_loss / N)
@@ -45,13 +49,17 @@ def test(loader, model, task, device):
     model.eval()
     total_error = 0
     N = 0
-    with torch.no_grad():
+    with torch.no_grad(), \
+         tqdm(total=len(loader.dataset)) as progress_bar:
         for data in loader:
             data = data.to(device)
-            total_error += (model(data).squeeze() - data.pos[:,task:task+1].squeeze()).square().sum().item()
-            N += data.num_nodes
+            batch_size=data.num_graphs
+            total_error += (model(data).squeeze() - data.y[:,task:task+1].squeeze()).square().sum().item()
+            N += data.num_graphs
+            progress_bar.update(batch_size)
     model.train()
     return np.log10(total_error / N)
+
 
 
 def get_model(args):
@@ -68,9 +76,13 @@ def get_model(args):
                   use_rd=args.use_rd,
                   virtual_node=args.virtual_node,
                   drop_prob=args.drop_prob)
-    model=NodeRegression(embedding_model=gnn)
+
+    model=GraphRegression(embedding_model=gnn,
+                          pooling_method=args.pooling_method)
     model.reset_parameters()
+
     return model
+
 
 def main():
     parser = argparse.ArgumentParser(f'arguments for training and testing')
@@ -108,7 +120,7 @@ def main():
     parser.add_argument("--train_eps",type=bool,default=False,help="Whether the epsilon is trainable")
     parser.add_argument("--negative_slope",type=float,default=0.2,help="slope in LeakyRelu")
     parser.add_argument("--combine",type=str,default="attention",choices=("attention","geometric"),help="Jumping knowledge method")
-    parser.add_argument("--pooling_method",type=str,default="sum",choices=("mean","sum","attention"),help="pooling method in graph classification")
+    parser.add_argument("--pooling_method",type=str,default="attention",choices=("mean","sum","attention"),help="pooling method in graph classification")
     parser.add_argument('--norm_type',type=str,default="Batch",choices=("Batch","Layer","Instance","GraphSize","Pair"),
                         help="normalization method in model")
     parser.add_argument('--aggr',type=str,default="add",help='aggregation method in GNN layer, only works in GraphSAGE')
@@ -125,7 +137,7 @@ def main():
     else:
         args.name=args.model_name+"_"+str(args.K)+"_"+"nops"+"_"+args.kernel+"_"+str(args.num_layer)+"_"+str(args.hidden_size)+"_"+str(args.max_edge_attr_num)
     # Set up logging and devices
-    args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name+"_node")
+    args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name+"_graph")
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
     args.batch_size *= max(1, len(args.gpu_ids))

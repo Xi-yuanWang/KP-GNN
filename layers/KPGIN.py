@@ -39,6 +39,10 @@ class KPGINConv(MessagePassing):
         self.hop_proj2=torch.nn.Parameter(torch.Tensor(self.K,self.output_dk,self.output_dk))
         self.hop_bias2=torch.nn.Parameter(torch.Tensor(self.K,self.output_dk))
 
+
+        tk = self.output_dk * K
+        self.efeature_mlp = nn.Sequential(nn.Linear(tk, tk), nn.ReLU(inplace=True), nn.Linear(tk, tk), nn.ReLU(inplace=True))
+
         self.initial_eps = eps
         if train_eps:
             self.eps = torch.nn.Parameter(torch.Tensor([eps]))
@@ -97,6 +101,8 @@ class KPGINConv(MessagePassing):
             e_emb = torch.cat([e1_emb,ek_emb],dim=-2) # E * K * dk
         else:
             e_emb=e1_emb
+        E, K, dk = e_emb.shape[0], e_emb.shape[1], e_emb.shape[2]
+        e_emb = self.efeature_mlp(e_emb.flatten(-2, -1)).reshape(E, K, dk)
 
         x_n=self.propagate(edge_index, x=x, edge_attr=e_emb, mask=edge_attr) # N * K * dk
 

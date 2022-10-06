@@ -16,7 +16,6 @@ from datasets.tu_dataset import TUDataset
 import torch_geometric.transforms as T
 from torch.optim import Adam
 import time
-from tqdm import tqdm
 import shutil
 import os
 import torch.nn as nn
@@ -65,10 +64,9 @@ def cross_validation_with_val_set(dataset,model,collate,folds,epochs,batch_size,
 
         t_start = time.perf_counter()
 
-        pbar = tqdm(range(1, epochs + 1), ncols=70)
         cur_val_losses = []
         cur_accs = []
-        for epoch in pbar:
+        for epoch in range(1, epochs + 1):
             train_loss = train_utils.train_TU(model, optimizer, train_loader, device)
             eval_loss=train_utils.val_TU(model, val_loader, device)
             cur_val_losses.append(eval_loss)
@@ -168,8 +166,7 @@ def cross_validation_without_val_set(dataset,model,collate,folds,epochs,batch_si
 
         t_start = time.perf_counter()
 
-        pbar = tqdm(range(1, epochs + 1), ncols=70)
-        for epoch in pbar:
+        for epoch in range(1, epochs + 1):
             train_loss = train_utils.train_TU(model, optimizer, train_loader, device)
             test_loss=train_utils.val_TU(model, test_loader, device)
             test_losses.append(test_loss)
@@ -240,8 +237,6 @@ def get_model(args):
                           pooling_method=args.pooling_method,
                           output_size=args.output_size)
     model.reset_parameters()
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
     return model
 
 def convert_node_and_edge_labels(data):
@@ -313,10 +308,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name+"_NGNN")
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')

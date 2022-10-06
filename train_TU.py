@@ -17,7 +17,6 @@ import shutil
 from torch.optim import Adam
 import torch.nn as nn
 import time
-from tqdm import tqdm
 from torch_geometric.data import DenseDataLoader as DenseLoader
 from torch.utils.data import DataLoader
 import os
@@ -63,7 +62,7 @@ def cross_validation_GIN_split(dataset,model,collate,epochs,batch_size,lr,factor
 
         t_start = time.perf_counter()
 
-        pbar = tqdm(range(1, epochs + 1), ncols=70)
+        pbar = range(1, epochs + 1)
         for epoch in pbar:
             train_loss = train_utils.train_TU(model, optimizer, train_loader, device)
             test_loss=train_utils.val_TU(model, test_loader, device)
@@ -162,7 +161,7 @@ def cross_validation_with_PyG_dataset(dataset,model,collate,folds,epochs,batch_s
 
         t_start = time.perf_counter()
 
-        pbar = tqdm(range(1, epochs + 1), ncols=70)
+        pbar = range(1, epochs + 1)
         for epoch in pbar:
             train_loss = train_utils.train_TU(model, optimizer, train_loader, device)
             test_loss=train_utils.val_TU(model, test_loader, device)
@@ -234,12 +233,6 @@ def get_model(args):
                           output_size=args.output_size)
 
     model.reset_parameters()
-
-    #If use multiple gpu, torch geometric model must use DataParallel class
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
     return model
 
 def convert_edge_labels(data):
@@ -307,10 +300,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name+"_GIN")
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')

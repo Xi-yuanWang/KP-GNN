@@ -11,12 +11,10 @@ from collections import OrderedDict
 from json import dumps
 from models.model_utils import make_gnn_layer,make_GNN
 from models.GraphRegression import GraphRegression
-from tqdm import tqdm
 import torch.nn.functional as F
 from functools import partial
 import torch.utils.data as data
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch_geometric.nn import DataParallel
 import argparse
 from data_utils import multi_hop_neighbors_with_gd_kernel,multi_hop_neighbors_with_spd_kernel,PyG_collate,resistance_distance
 import torch_geometric.transforms as T
@@ -26,31 +24,21 @@ import shutil
 
 def train(model,device,loader,optimizer,epoch):
     total_loss=0
-    with torch.enable_grad(), \
-         tqdm(total=len(loader.dataset)) as progress_bar:
+    with torch.enable_grad():
         for data in loader:
-            y=data.y
-            y = y.to(device)
             data = data.to(device)
-            batch_size = data.num_graphs
             optimizer.zero_grad()
             # forward
-            score = model(data )
-            loss = F.l1_loss(score, y)
-            mae = MAE(score, y)
+            score = model(data)
+            loss = F.l1_loss(score, data.y)
+            mae = MAE(score, data.y)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(),5.0)
             optimizer.step()
             model.zero_grad()
-
-            progress_bar.update(batch_size)
             loss_val = loss.item()
             lr = optimizer.param_groups[0]['lr']
-            progress_bar.set_postfix(epoch=epoch,
-                                     loss=loss_val,
-                                     mae=mae,
-                                     lr=lr)
-            total_loss+=loss.item()*batch_size
+            total_loss+=loss.item()
     return total_loss/ len(loader.dataset)
 
 
@@ -58,8 +46,7 @@ def test(model,device,loader):
     total_mae=0
     model.eval()
 
-    with torch.no_grad(), \
-         tqdm(total=len(loader.dataset)) as progress_bar:
+    with torch.no_grad():
         for data in loader:
             y=data.y
             y = y.to(device)
@@ -70,9 +57,6 @@ def test(model,device,loader):
             mae=MAE(score,y)
             mae=mae*batch_size
             total_mae=total_mae+mae
-
-            progress_bar.update(batch_size)
-            progress_bar.set_postfix(MAE=mae)
 
     mae_avg=total_mae/len(loader.dataset)
     model.train()
@@ -103,12 +87,6 @@ def get_model(args):
     model=GraphRegression(embedding_model=gnn,
                           pooling_method=args.pooling_method)
     model.reset_parameters()
-    #If use multiple gpu, torch geometric model must use DataParallel class
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
-
     return model
 
 def convert_edge_labels(data):
@@ -175,10 +153,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name)
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')

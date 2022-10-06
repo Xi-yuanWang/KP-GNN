@@ -6,7 +6,6 @@ import os
 import queue
 import shutil
 import logging
-from tqdm import tqdm
 from sklearn.model_selection import StratifiedKFold, KFold
 import torch.nn.functional as F
 
@@ -278,7 +277,6 @@ def get_logger(log_dir, name):
         def emit(self, record):
             try:
                 msg = self.format(record)
-                tqdm.write(msg)
                 self.flush()
             except (KeyboardInterrupt, SystemExit):
                 raise

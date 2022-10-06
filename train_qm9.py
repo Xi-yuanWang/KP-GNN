@@ -17,7 +17,6 @@ from datasets.QM9Dataset import QM9,conversion
 import torch_geometric.transforms as T
 import shutil
 from torch.optim import Adam
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 import os
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -43,10 +42,6 @@ def get_model(args):
                           pooling_method=args.pooling_method)
 
     model.reset_parameters()
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
     return model
 
 class MyTransform(object):
@@ -174,10 +169,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name)
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')
@@ -262,9 +253,7 @@ def main():
 
     best_val_error=1E6
     test_error=1E6
-    pbar = tqdm(range(1, args.num_epochs+1))
-    for epoch in pbar:
-        pbar.set_description('Epoch: {:03d}'.format(epoch))
+    for epoch in range(1, args.num_epochs+1):
         lr = scheduler.optimizer.param_groups[0]['lr']
         loss = train(model,train_loader,optimizer,device)
         val_error = test(model,val_loader,args.task,std,device)

@@ -33,6 +33,8 @@ class KPGraphSAGEConv(MessagePassing):
         self.output_size=output_size
         self.hop_proj=torch.nn.Parameter(torch.Tensor(self.K,2*self.input_dk,self.output_dk))
         self.hop_bias=torch.nn.Parameter(torch.Tensor(self.K,self.output_dk))
+        tk = self.output_dk * K
+        self.efeature_mlp = nn.Sequential(nn.Linear(tk, tk), nn.ReLU(inplace=True), nn.Linear(tk, tk), nn.ReLU(inplace=True))
 
         # edge embedding for 1-hop and k-hop
         # Notice that in hop, there is no actually edge feature, therefore need addtional embedding layer to encode
@@ -82,6 +84,8 @@ class KPGraphSAGEConv(MessagePassing):
             e_emb = torch.cat([e1_emb,ek_emb],dim=-2) # E * K * dk
         else:
             e_emb=e1_emb
+        E, K, dk = e_emb.shape[0], e_emb.shape[1], e_emb.shape[2]
+        e_emb = self.efeature_mlp(e_emb.flatten(-2, -1)).reshape(E, K, dk)
 
         x_n=self.propagate(edge_index, x=x, edge_attr=e_emb, mask=edge_attr) # N * K * dk
 

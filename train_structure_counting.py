@@ -18,7 +18,6 @@ import shutil
 from torch.optim import Adam
 import torch.nn as nn
 import time
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 import os
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -26,11 +25,9 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 def train(train_loader, model,task, optimizer, device):
     total_loss = 0
     N = 0
-    with torch.enable_grad(), \
-         tqdm(total=len(train_loader.dataset)) as progress_bar:
+    with torch.enable_grad():
         for data in train_loader:
             data = data.to(device)
-            batch_size=data.num_graphs
             optimizer.zero_grad()
             pre=model(data).squeeze()
             loss = (pre - data.y[:,task:task+1].squeeze()).square().mean()
@@ -39,7 +36,6 @@ def train(train_loader, model,task, optimizer, device):
             total_loss += loss.item() * data.num_graphs
             N += data.num_graphs
             optimizer.step()
-            progress_bar.update(batch_size)
 
     return total_loss / N
 
@@ -48,14 +44,11 @@ def test(loader, model, task, device):
     model.eval()
     total_error = 0
     N = 0
-    with torch.no_grad(), \
-         tqdm(total=len(loader.dataset)) as progress_bar:
+    with torch.no_grad():
         for data in loader:
             data = data.to(device)
-            batch_size=data.num_graphs
             total_error += (model(data).squeeze() - data.y[:,task:task+1].squeeze()).square().sum().item()
             N += data.num_graphs
-            progress_bar.update(batch_size)
     model.train()
     return total_error / N
 
@@ -77,12 +70,6 @@ def get_model(args):
                           pooling_method=args.pooling_method)
 
     model.reset_parameters()
-
-    #If use multiple gpu, torch geometric model must use DataParallel class
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
     return model
 
 
@@ -145,10 +132,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name)
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')

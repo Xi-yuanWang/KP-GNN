@@ -8,7 +8,6 @@ import torch.nn as nn
 import train_utils
 from json import dumps
 from datasets.PlanarSATPairsDataset import PlanarSATPairsDataset
-from tqdm import tqdm
 from torch.optim import Adam
 import torch.utils.data as data
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -41,11 +40,6 @@ def get_model(args):
                               output_size=args.output_size)
 
     model.reset_parameters()
-
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
     return model
 
 
@@ -62,8 +56,7 @@ class MyPreTransform(object):
 def val(data_loader,model,device):
     model.eval()
     loss_all = 0
-    with torch.no_grad(), \
-         tqdm(total=len(data_loader.dataset)) as progress_bar:
+    with torch.no_grad():
         for batch_graphs in data_loader:
             batch_graphs = batch_graphs.to(device)
             batch_size=batch_graphs.num_graphs
@@ -71,7 +64,6 @@ def val(data_loader,model,device):
             predict=F.log_softmax(predict,dim=-1)
             loss=F.nll_loss(predict,batch_graphs.y, reduction='sum').item()
             loss_all += loss
-            progress_bar.update(batch_size)
 
     model.train()
     return loss_all / len(data_loader.dataset)
@@ -79,8 +71,7 @@ def val(data_loader,model,device):
 def test(data_loader,model,device):
     model.eval()
     correct = 0
-    with torch.no_grad(), \
-         tqdm(total=len(data_loader.dataset)) as progress_bar:
+    with torch.no_grad():
         for batch_graphs in data_loader:
             batch_graphs = batch_graphs.to(device)
             batch_size=batch_graphs.num_graphs
@@ -91,7 +82,6 @@ def test(data_loader,model,device):
                 successful_trials += pred.eq(batch_graphs.y)
             successful_trials = successful_trials > (nb_trials // 2)
             correct += successful_trials.sum().item()
-            progress_bar.update(batch_size)
     model.train()
     return correct / len(data_loader.dataset)
 
@@ -148,10 +138,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name)
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
 
 
@@ -247,7 +233,7 @@ def main():
         best_val_loss, best_test_acc,best_train_acc = 100, 0,0
         for epoch in range(args.num_epochs):
             log.info(f'Starting epoch {epoch+1}...')
-            with torch.enable_grad(), tqdm(total=len(train_loader.dataset)) as progress_bar:
+            with torch.enable_grad():
                 for graphs in train_loader:
                     graphs = graphs.to(device)
                     batch_size = graphs.num_graphs
@@ -260,12 +246,8 @@ def main():
                     optimizer.step()
                     model.zero_grad()
                     # Log info
-                    progress_bar.update(batch_size)
                     loss_val = loss.item()
                     lr = optimizer.param_groups[0]['lr']
-                    progress_bar.set_postfix(epoch=epoch + 1,
-                                             loss=loss_val,
-                                             lr=lr)
 
 
                 log.info(f"evaluate after epoch {epoch+1}...")

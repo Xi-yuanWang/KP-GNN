@@ -3,7 +3,6 @@ script to train on OGB molecule dataset
 Adapted from Nested GNN:https://github.com/muhanzhang/NestedGNN
 """
 
-from tqdm import tqdm
 import  os
 import random
 import pdb
@@ -55,10 +54,6 @@ def get_model(args):
                           output_size=args.output_size)
     model.reset_parameters()
 
-    if args.parallel:
-        model = DataParallel(model, args.gpu_ids)
-
-
     return model
 
 
@@ -66,7 +61,7 @@ def get_model(args):
 def train(model, device, loader, optimizer, task_type):
     model.train()
     total_loss = 0
-    for step, batch in enumerate(tqdm(loader, desc="Iteration", ncols=70)):
+    for step, batch in enumerate(loader):
         batch = batch.to(device)
         skip_epoch = batch.x.shape[0] == 1 or batch.batch[-1] == 0
 
@@ -115,7 +110,7 @@ def eval(model, device, loader, evaluator, return_loss=False,
         y_pred = []
         y_loss = []
 
-        for step, batch in enumerate(tqdm(loader, desc="Iteration", ncols=70)):
+        for step, batch in enumerate(loader, desc="Iteration", ncols=70):
             batch = batch.to(device)
             skip_epoch = batch.x.shape[0] == 1
 
@@ -286,10 +281,6 @@ def main():
     args.save_dir = train_utils.get_save_dir(args.save_dir, args.name, type=args.dataset_name)
     log = train_utils.get_logger(args.save_dir, args.name)
     device, args.gpu_ids = train_utils.get_available_devices()
-    if len(args.gpu_ids)>1:
-        args.parallel=True
-    else:
-        args.parallel=False
     args.batch_size *= max(1, len(args.gpu_ids))
     # Set random seed
     log.info(f'Using random seed {args.seed}...')
